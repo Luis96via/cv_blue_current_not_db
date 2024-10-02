@@ -1,4 +1,54 @@
+<?php
+// Iniciar la sesión al principio del script
+session_start();
 
+// Conexión a la base de datos
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "cv_antonio";
+
+$conn = new mysqli($servername, $username, $password, $dbname);
+if ($conn->connect_error) {
+    die("Conexión fallida: " . $conn->connect_error);
+}
+
+// Obtener la IP del visitante
+$ip = $_SERVER['REMOTE_ADDR'];
+
+// Convertir ::1 a 127.0.0.1 para pruebas locales
+if ($ip === '::1') {
+    $ip = '190.153.94.39';
+}
+
+
+
+// Llamar a la API ip-api para obtener información geográfica
+$api_url = "http://ip-api.com/json/$ip";
+$response = file_get_contents($api_url);
+$data = json_decode($response, true);
+
+$pais = $data['country'];
+$region = $data['regionName'];
+$ciudad = $data['city'];
+$fecha = date('Y-m-d H:i:s');
+
+// Insertar los datos en la base de datos
+$sql = "INSERT INTO visitas (ip, pais, region, ciudad, fecha, tiempo_visita) VALUES (?, ?, ?, ?, ?, ?)";
+$stmt = $conn->prepare($sql);
+$tiempo_visita = 0; // Inicialmente 0, se actualizará al cerrar la sesión
+$stmt->bind_param("sssssi", $ip, $pais, $region, $ciudad, $fecha, $tiempo_visita);
+$stmt->execute();
+// Obtener el último ID insertado
+$last_id = $conn->insert_id;
+
+// Guardar el ID en la sesión
+$_SESSION['last_visit_id'] = $last_id;
+
+
+$stmt->close();
+$conn->close();
+?>
 
 
 <!Doctype html>
@@ -291,5 +341,38 @@
     </div>
 </footer>
         
+
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(document).ready(function() {
+    var startTime = new Date().getTime();
+
+    function sendVisitTime() {
+        var currentTime = new Date().getTime();
+        var tiempoVisita = Math.floor((currentTime - startTime) / 1000);
+        
+        $.ajax({
+            url: 'update_tiempo_visita.php',
+            type: 'POST',
+            data: JSON.stringify({ tiempo_visita: tiempoVisita }),
+            contentType: 'application/json',
+            success: function(response) {
+                console.log('Tiempo de visita actualizado:', response);
+            },
+            error: function(xhr, status, error) {
+                console.error('Error al actualizar tiempo de visita:', error);
+            }
+        });
+    }
+
+    // Enviar cada 60 segundos
+    setInterval(sendVisitTime, 60000);
+
+    // También enviar al cerrar la página
+    $(window).on('beforeunload', sendVisitTime);
+});
+</script>
+
 </body>
 </html>
